@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Inside a Cell: What Keeps You Alive</title>
+<style>
+:root{--bg:#f3f6f1;--panel:#ffffff;--ink:#14261f;--mute:#4f6359;--line:#cfdad2;--accent:#0d7a5f;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1a16;--panel:#16251f;--ink:#e8f2ec;--mute:#9fb5a9;--line:#2a3f36;--accent:#4fd1a5;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+header{padding:12px 16px 8px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
+h1{font:700 1.15rem/1.2 Georgia,"Times New Roman",serif;margin:0}
+.tog{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.tog button{border:0;background:transparent;color:var(--ink);padding:7px 16px;font:inherit;cursor:pointer}
+.tog button[aria-pressed="true"]{background:var(--accent);color:#04120d;font-weight:700}
+main{flex:1;min-height:0;display:flex;flex-direction:column}
+#stage{flex:1;min-height:200px;position:relative;background:#0b1512;touch-action:none;cursor:grab}
+#stage canvas{display:block;width:100%;height:100%}
+#hint{position:absolute;left:12px;bottom:10px;color:#9fb5a9;font-size:.78rem;pointer-events:none}
+aside{background:var(--panel);border-top:1px solid var(--line);padding:12px 16px;max-height:46%;overflow-y:auto}
+#tag{margin:0 0 10px}
+#tag h2{margin:0 0 4px;font:700 1.05rem Georgia,serif}
+#tag q{display:block;font-size:1.05rem;line-height:1.45;quotes:"“" "”"}
+#tag p{margin:6px 0 0;color:var(--mute);font-size:.88rem;line-height:1.4}
+#list{display:flex;flex-wrap:wrap;gap:6px}
+#list button{border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:8px;padding:5px 10px;font:inherit;font-size:.85rem;cursor:pointer;display:flex;align-items:center;gap:6px}
+#list button[aria-pressed="true"]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 18%,transparent)}
+#list i{width:10px;height:10px;border-radius:50%;display:inline-block}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (min-width:860px){main{flex-direction:row}aside{width:380px;max-height:none;border-top:0;border-left:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header>
+<h1>Inside a cell: what keeps you alive</h1>
+<div class="tog" role="group" aria-label="Cell type">
+<button id="bA" aria-pressed="true">Animal cell</button>
+<button id="bP" aria-pressed="false">Plant cell</button>
+</div>
+</header>
+<main>
+<div id="stage"><div id="hint">Drag to rotate · scroll or pinch to zoom · tap a part</div></div>
+<aside>
+<div id="tag" aria-live="polite"></div>
+<div id="list"></div>
+</aside>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const D={
+nucleus:{n:"Nucleus",c:0x7b6cf6,t:"Without me, your cells wouldn’t know what to do. I guard the DNA blueprint that tells every cell how to build and repair you.",f:"Stores DNA and controls which genes are switched on."},
+mito:{n:"Mitochondria",c:0xf0873a,t:"Without me, you wouldn’t have the energy to run, think, or even blink. I turn food into the fuel your cells spend all day.",f:"Makes ATP, the cell’s usable energy, through cellular respiration."},
+er:{n:"Endoplasmic reticulum",c:0x3fb6c9,t:"Without me, your cells couldn’t build proteins or fats, and the body’s hormones and enzymes would never get made.",f:"A folded membrane network that builds and folds proteins and makes lipids."},
+golgi:{n:"Golgi apparatus",c:0xe5c34a,t:"Without me, everything your cells make would pile up with no address label. I sort, package, and ship it where it’s needed.",f:"Modifies, sorts, and packages proteins into vesicles."},
+ribo:{n:"Ribosomes",c:0xe05a7a,t:"Without me, no proteins. That means no muscle, no enzymes, no antibodies to fight infection. I read the instructions and build.",f:"Translate RNA into protein."},
+lyso:{n:"Lysosomes",c:0xb4e04a,t:"Without me, your cells would drown in their own waste. I break down worn-out parts and germs so the cell stays clean.",f:"Digestive enzymes recycle damaged organelles and destroy invaders."},
+vac:{n:"Central vacuole",c:0x6fa8ff,t:"Without me, the plant would wilt like a deflated balloon. I hold water and push outward to keep leaves and stems firm.",f:"Stores water and nutrients and maintains turgor pressure."},
+chloro:{n:"Chloroplasts",c:0x3ea34a,t:"Without me, there would be no food and no oxygen. I catch sunlight and turn it into sugar, feeding the plant and nearly everything that eats it.",f:"Photosynthesis: light + CO₂ + water becomes sugar + oxygen."},
+wall:{n:"Cell wall",c:0xb08a5a,t:"Without me, the plant couldn’t stand up. I’m the rigid armor that holds the cell’s shape and stops it bursting from too much water.",f:"Cellulose layer outside the membrane giving structure and protection."},
+mem:{n:"Cell membrane",c:0x8fd0ff,t:"Without me, your cell would spill out and anything could walk in. I decide what enters, what leaves, and what stays out.",f:"Selectively permeable lipid barrier around the cell."}
+};
+const stage=document.getElementById("stage");
+const R=new THREE.WebGLRenderer({antialias:true});
+R.setPixelRatio(Math.min(devicePixelRatio,2));
+stage.appendChild(R.domElement);
+const S=new THREE.Scene();S.background=new THREE.Color(0x0b1512);
+const cam=new THREE.PerspectiveCamera(45,1,.1,100);
+let dist=15,rx=.35,ry=.6,auto=true;
+S.add(new THREE.AmbientLight(0xffffff,.65));
+const dl=new THREE.DirectionalLight(0xffffff,.9);dl.position.set(5,8,6);S.add(dl);
+const dl2=new THREE.PointLight(0x88ffdd,.5);dl2.position.set(-6,-3,-4);S.add(dl2);
+const root=new THREE.Group();S.add(root);
+let pick=[],sel=null,mode="animal";
+const mats=[];
+function M(id,op){const m=new THREE.MeshStandardMaterial({color:D[id].c,roughness:.45,metalness:.1,transparent:op!=null,opacity:op==null?1:op,emissive:D[id].c,emissiveIntensity:.08});mats.push(m);return m}
+function add(id,geo,pos,o){o=o||{};const m=new THREE.Mesh(geo,M(id,o.op));m.position.set(...pos);if(o.s)m.scale.set(...o.s);if(o.r)m.rotation.set(...o.r);m.userData.id=id;if(o.p)o.p.add(m);else root.add(m);if(!o.np)pick.push(m);return m}
+function build(){
+while(root.children.length)root.remove(root.children[0]);pick=[];
+const sp=(r,w)=>new THREE.SphereGeometry(r,w||24,16);
+const plant=mode==="plant";
+const bg=plant?new THREE.BoxGeometry(9,6.4,6.4):new THREE.SphereGeometry(4.4,40,28);
+const b=new THREE.Mesh(bg,new THREE.MeshStandardMaterial({color:plant?D.wall.c:D.mem.c,transparent:true,opacity:plant?.12:.14,depthWrite:false,side:THREE.DoubleSide}));
+b.userData.id=plant?"wall":"mem";root.add(b);pick.push(b);
+const edges=new THREE.LineSegments(new THREE.EdgesGeometry(bg),new THREE.LineBasicMaterial({color:plant?D.wall.c:D.mem.c,transparent:true,opacity:plant?.9:0}));root.add(edges);
+if(plant){const inner=new THREE.Mesh(new THREE.BoxGeometry(8.6,6,6),new THREE.MeshStandardMaterial({color:D.mem.c,transparent:true,opacity:.08,depthWrite:false,side:THREE.DoubleSide}));root.add(inner)}
+const np=plant?[2.4,.6,.4]:[0,0,0];
+add("nucleus",sp(plant?.95:1.3,32),np);
+const nc=new THREE.Mesh(sp(plant?1.15:1.55,24),new THREE.MeshBasicMaterial({color:D.nucleus.c,transparent:true,opacity:.1,depthWrite:false}));nc.position.set(...np);root.add(nc);
+add("nucleus",sp(.3),[np[0]+.2,np[1]+.15,np[2]+(plant?.75:1.05)],{np:1}).material.color.set(0xd6cfff);
+const er=plant?1.45:1.9;
+for(let i=0;i<4;i++){add("er",new THREE.TorusGeometry(er+i*.06,.1,10,40),np,{r:[Math.PI/2+i*.45,i*.5,i*.3]})}
+const gp=plant?[1.2,-2,1.2]:[2.2,-1.6,.8];
+for(let i=0;i<5;i++){add("golgi",sp(1,20),[gp[0],gp[1]+i*.26,gp[2]],{s:[1.15-Math.abs(i-2)*.12,.1,.6],r:[0,.5,0]})}
+const mp=plant?[[-3,2,1.5],[-2.5,-2.2,-1.6],[3,-1.8,-1.4]]:[[-2.3,1.8,1.5],[2.4,1.5,-1.8],[-2,-1.6,-2],[.4,-2.8,1.6]];
+mp.forEach((p,i)=>{const m=add("mito",sp(.5),p,{s:[1.7,.8,.8],r:[i,i*1.3,i*.7]});
+const c=new THREE.Mesh(new THREE.TorusGeometry(.28,.05,6,14),new THREE.MeshStandardMaterial({color:0xffd2a6}));m.add(c);c.position.x=-.15;c.rotation.y=1.2;c.scale.set(1,1,1)});
+const lp=plant?[[0,2.4,-1.8],[-.5,-2.4,.4]]:[[-3,.3,.8],[1.8,-.6,3],[-.8,2.9,-.8]];
+lp.forEach(p=>add("lyso",sp(.32),p));
+const g=sp(.07,8);
+for(let i=0;i<46;i++){const a=i*2.399,y=1-(i/45)*2,r=Math.sqrt(1-y*y),rr=er+.14;
+add("ribo",g,[np[0]+Math.cos(a)*r*rr,np[1]+y*rr,np[2]+Math.sin(a)*r*rr],{np:i>0});}
+for(let i=0;i<26;i++){const a=i*5.1,x=Math.sin(a*1.3)*3,y=Math.cos(a*.9)*2,z=Math.sin(a*2.1)*2;
+add("ribo",g,[plant?x*.8-.4:x*.9,y,z],{np:1})}
+if(plant){
+add("vac",sp(2.1,32),[-1.6,0,-.3],{op:.5});
+[[-3.2,2.3,2.2],[0,2.5,2.4],[3.2,2.2,1.6],[-3.4,-2.2,2.0],[1.2,-2.6,-2]].forEach((p,i)=>{
+const c=add("chloro",sp(.5),p,{s:[1.5,.9,.9],r:[0,i,.3]});
+for(let k=0;k<3;k++){const gr=new THREE.Mesh(new THREE.CylinderGeometry(.14,.14,.12,12),new THREE.MeshStandardMaterial({color:0x1d6b2a}));gr.position.set(-.3+k*.3,0,.38);gr.rotation.x=Math.PI/2;c.add(gr)}
+})}
+}
+const tag=document.getElementById("tag"),list=document.getElementById("list");
+function ids(){return mode==="plant"?["nucleus","mito","er","golgi","ribo","lyso","vac","chloro","wall","mem"]:["nucleus","mito","er","golgi","ribo","lyso","mem"]}
+function renderList(){list.innerHTML="";ids().forEach(id=>{const b=document.createElement("button");b.setAttribute("aria-pressed",id===sel);b.innerHTML='<i style="background:#'+D[id].c.toString(16).padStart(6,"0")+'"></i>'+D[id].n;b.onclick=()=>select(id);list.appendChild(b)})}
+function select(id){sel=id;const d=D[id];
+tag.innerHTML=id?"<h2>"+d.n+"</h2><q>"+d.t+"</q><p>"+d.f+"</p>":"<h2>Tap any part of the cell</h2><p>Each part carries a tag explaining why you couldn’t live without it.</p>";
+renderList();
+mats.forEach(m=>m.emissiveIntensity=.08);
+root.traverse(o=>{if(o.isMesh&&o.userData.id===id&&o.material.emissive)o.material.emissiveIntensity=.7})}
+function setMode(m){mode=m;sel=null;mats.length=0;build();select(null);
+document.getElementById("bA").setAttribute("aria-pressed",m==="animal");document.getElementById("bP").setAttribute("aria-pressed",m==="plant")}
+document.getElementById("bA").onclick=()=>setMode("animal");
+document.getElementById("bP").onclick=()=>setMode("plant");
+const ray=new THREE.Raycaster(),mv=new THREE.Vector2();
+const pts=new Map();let moved=0,pd=0;
+const el=R.domElement;
+el.addEventListener("pointerdown",e=>{el.setPointerCapture(e.pointerId);pts.set(e.pointerId,e);moved=0;auto=false;pd=pts.size===2?pinch():0});
+el.addEventListener("pointermove",e=>{if(!pts.has(e.pointerId))return;const p=pts.get(e.pointerId);
+if(pts.size===1){rx+=(e.clientY-p.clientY)*.008;ry+=(e.clientX-p.clientX)*.008;rx=Math.max(-1.4,Math.min(1.4,rx));moved+=Math.abs(e.clientX-p.clientX)+Math.abs(e.clientY-p.clientY)}
+pts.set(e.pointerId,e);if(pts.size===2){const d=pinch();dist=Math.max(7,Math.min(24,dist*pd/d));pd=d;moved+=10}});
+function pinch(){const a=[...pts.values()];return Math.hypot(a[0].clientX-a[1].clientX,a[0].clientY-a[1].clientY)||1}
+el.addEventListener("pointerup",e=>{pts.delete(e.pointerId);if(moved<6&&pts.size===0){const r=el.getBoundingClientRect();
+mv.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(mv,cam);
+const h=ray.intersectObjects(pick,false);
+const inner=h.find(x=>x.object.userData.id!=="mem"&&x.object.userData.id!=="wall");
+const hit=inner||h[0];
+select(hit?hit.object.userData.id:null)}});
+el.addEventListener("pointercancel",e=>pts.delete(e.pointerId));
+el.addEventListener("wheel",e=>{e.preventDefault();dist=Math.max(7,Math.min(24,dist+e.deltaY*.01))},{passive:false});
+function resize(){const w=stage.clientWidth,h=stage.clientHeight;R.setSize(w,h);cam.aspect=w/h;cam.updateProjectionMatrix()}
+new ResizeObserver(resize).observe(stage);
+const still=matchMedia("(prefers-reduced-motion: reduce)").matches;
+let t0=0;
+function loop(t){requestAnimationFrame(loop);const dt=(t-t0)/1000;t0=t;
+if(auto&&!still)ry+=dt*.25;
+cam.position.set(Math.sin(ry)*Math.cos(rx)*dist,Math.sin(rx)*dist,Math.cos(ry)*Math.cos(rx)*dist);cam.lookAt(0,0,0);
+R.render(S,cam)}
+resize();setMode("animal");requestAnimationFrame(loop);
+</script>
+</body>
+</html>
